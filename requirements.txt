@@ -5,6 +5,7 @@ python-dotenv
 ipykernel
 langchain-community
 pypdf
+yt-dlp
 bs4
 arxiv
 pymupdf
