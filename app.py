@@ -3,7 +3,7 @@ import validators
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-from youtube_transcript_api import YouTubeTranscriptApi
+import yt_dlp
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
@@ -28,17 +28,57 @@ Content:{text}
 """
 prompt = PromptTemplate(template=prompt_template, input_variables=["text"])
 
-def extract_youtube_video_id(url):
-    patterns = [
-        r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
-        r'(?:embed\/)([0-9A-Za-z_-]{11})',
-        r'(?:youtu\.be\/)([0-9A-Za-z_-]{11})'
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, url)
-        if match:
-            return match.group(1)
-    return None
+def extract_youtube_content(url):
+    """Extracts transcript text using yt-dlp, with a fallback to video title & description if blocked."""
+    ydl_opts = {
+        'skip_download': True,
+        'writesubtitles': True,
+        'writeautomaticsub': True,
+        'subtitleslangs': ['en', 'hi', 'es', 'fr', 'de', 'it', 'pt'],
+        'socket_timeout': 10,
+    }
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        try:
+            info = ydl.extract_info(url, download=False)
+            title = info.get('title', '')
+            description = info.get('description', '')
+            
+            # Try to find subtitle tracks from extracted info
+            subtitles = info.get('subtitles') or info.get('automatic_captions')
+            transcript_text = ""
+            
+            if subtitles:
+                # Pick the first available language track URL
+                for lang in ['en', 'hi', 'es', 'fr', 'de', 'it', 'pt']:
+                    if lang in subtitles:
+                        formats = subtitles[lang]
+                        # Look for json3 or vtt format
+                        sub_url = None
+                        for fmt in formats:
+                            if fmt.get('ext') in ['json3', 'vtt', 'srv1']:
+                                sub_url = fmt.get('url')
+                                break
+                        if sub_url:
+                            sub_res = requests.get(sub_url)
+                            if sub_res.status_code == 200:
+                                # Simple cleanup of VTT/JSON subtitle text
+                                raw_sub = sub_res.text
+                                # Strip out timestamps/tags if VTT
+                                lines = [line.strip() for line in raw_sub.split('\n') 
+                                         if line.strip() and '-->' not in line and not line.strip().isdigit()]
+                                transcript_text = " ".join(lines)
+                                break
+            
+            # Fallback: If no subtitles could be downloaded, use Title + Description
+            if not transcript_text.strip():
+                transcript_text = f"Title: {title}\n\nDescription: {description}"
+                
+            return transcript_text
+            
+        except Exception as e:
+            # Ultimate fallback to requests/BeautifulSoup on watch page metadata if yt-dlp is blocked
+            raise RuntimeError(f"YouTube extraction failed: {e}")
 
 if st.button("Summarize the Content from YT or Website"):
     # Validate all the inputs
@@ -52,25 +92,9 @@ if st.button("Summarize the Content from YT or Website"):
                 # Initialize ChatGroq inside the button handler
                 llm = ChatGroq(model="openai/gpt-oss-20b", groq_api_key=groq_api_key)
 
-                # 1. Handle YouTube URLs with multi-language fallback
+                # 1. Handle YouTube URLs using yt-dlp
                 if "youtube.com" in generic_url or "youtu.be" in generic_url:
-                    video_id = extract_youtube_video_id(generic_url)
-                    if not video_id:
-                        raise ValueError("Could not extract YouTube Video ID from the URL.")
-                    
-                    ytt_api = YouTubeTranscriptApi()
-                    try:
-                        # Try preferred languages first
-                        fetched_transcript = ytt_api.fetch(video_id, languages=['en', 'hi', 'es', 'fr', 'de', 'it', 'pt'])
-                        transcript_data = fetched_transcript.to_raw_data()
-                    except Exception:
-                        # Fallback: grab any available transcript if preferred languages fail
-                        transcript_list = ytt_api.list(video_id)
-                        first_transcript = next(iter(transcript_list))
-                        fetched_transcript = first_transcript.fetch()
-                        transcript_data = fetched_transcript.to_raw_data()
-                    
-                    text = " ".join([item['text'] for item in transcript_data])
+                    text = extract_youtube_content(generic_url)
 
                 # 2. Handle Website URLs using requests & BeautifulSoup
                 else:
