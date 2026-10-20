@@ -1,4 +1,6 @@
 langchain
+langchain-core
+langchain-classic
 python-dotenv
 ipykernel
 langchain-community
@@ -24,9 +26,12 @@ arxiv
 wikipedia
 mysql-connector-python
 SQLAlchemy
-validators==0.28.1
-youtube_transcript_api
+validators
+youtube-transcript-api
 unstructured
 pytube
 numexpr
 huggingface_hub
+streamlit
+requests
+beautifulsoup4
