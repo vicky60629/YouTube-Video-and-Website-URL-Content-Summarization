@@ -8,7 +8,7 @@ from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
 from langchain_classic.chains.summarize import load_summarize_chain
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Streamlit APP Config
 st.set_page_config(page_title="LangChain: Summarize Text From YT or Website", page_icon="🦜")
@@ -70,7 +70,7 @@ if st.button("Summarize the Content from YT or Website"):
                         fetched_transcript = first_transcript.fetch()
                         transcript_data = fetched_transcript.to_raw_data()
                     
-                    text = "FF ".join([item['text'] for item in transcript_data])
+                    text = " ".join([item['text'] for item in transcript_data])
 
                 # 2. Handle Website URLs using requests & BeautifulSoup
                 else:
