@@ -49,11 +49,9 @@ def extract_youtube_content(url):
             transcript_text = ""
             
             if subtitles:
-                # Pick the first available language track URL
                 for lang in ['en', 'hi', 'es', 'fr', 'de', 'it', 'pt']:
                     if lang in subtitles:
                         formats = subtitles[lang]
-                        # Look for json3 or vtt format
                         sub_url = None
                         for fmt in formats:
                             if fmt.get('ext') in ['json3', 'vtt', 'srv1']:
@@ -62,9 +60,7 @@ def extract_youtube_content(url):
                         if sub_url:
                             sub_res = requests.get(sub_url)
                             if sub_res.status_code == 200:
-                                # Simple cleanup of VTT/JSON subtitle text
                                 raw_sub = sub_res.text
-                                # Strip out timestamps/tags if VTT
                                 lines = [line.strip() for line in raw_sub.split('\n') 
                                          if line.strip() and '-->' not in line and not line.strip().isdigit()]
                                 transcript_text = " ".join(lines)
@@ -77,7 +73,6 @@ def extract_youtube_content(url):
             return transcript_text
             
         except Exception as e:
-            # Ultimate fallback to requests/BeautifulSoup on watch page metadata if yt-dlp is blocked
             raise RuntimeError(f"YouTube extraction failed: {e}")
 
 if st.button("Summarize the Content from YT or Website"):
@@ -115,14 +110,21 @@ if st.button("Summarize the Content from YT or Website"):
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=200)
                 docs = text_splitter.create_documents([text])
 
-                # Use map_reduce if content is large, stuff if it's short
-                chain_type = "map_reduce" if len(docs) > 1 else "stuff"
+                # Use map_reduce with correct prompt arguments if content is large, stuff if it's short
+                if len(docs) > 1:
+                    chain = load_summarize_chain(
+                        llm, 
+                        chain_type="map_reduce", 
+                        map_prompt=prompt, 
+                        combine_prompt=prompt
+                    )
+                else:
+                    chain = load_summarize_chain(
+                        llm, 
+                        chain_type="stuff", 
+                        prompt=prompt
+                    )
 
-                chain = load_summarize_chain(
-                    llm, 
-                    chain_type=chain_type, 
-                    prompt=prompt
-                )
                 response_output = chain.invoke({"input_documents": docs})
                 
                 # Extract output text from response dictionary
