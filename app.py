@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
 from langchain_groq import ChatGroq
 from langchain_classic.chains.summarize import load_summarize_chain
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 # Streamlit APP Config
 st.set_page_config(page_title="LangChain: Summarize Text From YT or Website", page_icon="🦜")
@@ -22,7 +23,7 @@ generic_url = st.text_input("URL", label_visibility="collapsed")
 
 # Define Prompt Template
 prompt_template = """
-Provide a summary of the following content in 300 words:
+Provide a concise summary of the following content in about 300 words:
 Content:{text}
 """
 prompt = PromptTemplate(template=prompt_template, input_variables=["text"])
@@ -69,8 +70,7 @@ if st.button("Summarize the Content from YT or Website"):
                         fetched_transcript = first_transcript.fetch()
                         transcript_data = fetched_transcript.to_raw_data()
                     
-                    text = " ".join([item['text'] for item in transcript_data])
-                    docs = [Document(page_content=text, metadata={"source": generic_url})]
+                    text = "FF ".join([item['text'] for item in transcript_data])
 
                 # 2. Handle Website URLs using requests & BeautifulSoup
                 else:
@@ -83,20 +83,26 @@ if st.button("Summarize the Content from YT or Website"):
                     soup = BeautifulSoup(response.text, "html.parser")
                     text = " ".join([p.get_text() for p in soup.find_all("p")])
                     
-                    # Truncate to first 6,000 characters to keep it fast and within TPM limits
-                    text = text[:6000]
-                    docs = [Document(page_content=text, metadata={"source": generic_url})]
+                    # Fallback if no <p> tags found
+                    if not text.strip():
+                        text = soup.get_text()
 
-                # Fast single-call summarization chain
+                # Split text into chunks to safely handle long transcripts/articles
+                text_splitter = RecursiveCharacterTextSplitter(chunk_size=4000, chunk_overlap=200)
+                docs = text_splitter.create_documents([text])
+
+                # Use map_reduce if content is large, stuff if it's short
+                chain_type = "map_reduce" if len(docs) > 1 else "stuff"
+
                 chain = load_summarize_chain(
                     llm, 
-                    chain_type="stuff", 
+                    chain_type=chain_type, 
                     prompt=prompt
                 )
-                response = chain.invoke({"input_documents": docs})
+                response_output = chain.invoke({"input_documents": docs})
                 
                 # Extract output text from response dictionary
-                output_summary = response.get("output_text", str(response))
+                output_summary = response_output.get("output_text", str(response_output))
 
                 st.success(output_summary)
         except Exception as e:
